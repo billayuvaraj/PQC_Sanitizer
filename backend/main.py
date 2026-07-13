@@ -4,16 +4,12 @@ import time
 import io
 import json
 import oqs
-import redis
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from PIL import Image, ExifTags
 
-# This tells Python: "Use the cloud Redis if it exists, otherwise use localhost"
-redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-r = redis.from_url(redis_url)
 
 # In-Memory State Store for Session-Scoped Keys
 active_sessions = {}

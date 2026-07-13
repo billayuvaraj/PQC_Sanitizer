@@ -3,5 +3,6 @@ uvicorn[standard]>=0.28.0
 python-multipart>=0.0.9
 pillow>=10.2.0
 liboqs-python>=0.11.0
+cryptography>=42.0.0
 # Note: liboqs-python requires the underlying C library to be installed on the system, 
 # which our backend Dockerfile takes care of automatically!

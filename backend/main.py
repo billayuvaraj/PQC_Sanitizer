@@ -9,6 +9,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from PIL import Image, ExifTags
+from fastapi.middleware.cors import CORSMiddleware
+
+# List of URLs allowed to talk to this API
+origins = [
+    "http://localhost:5173",             # Keeps your local testing working
+    "https://pqc-sanitizer.vercel.app",  # <--- Replace this with YOUR exact Vercel URL
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
 
 
 # In-Memory State Store for Session-Scoped Keys

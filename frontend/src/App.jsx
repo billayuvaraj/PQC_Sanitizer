@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { prepareSecurePayload } from './crypto';
 
+// 1. Dynamic API base URL assignment for production deployment
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
 function App() {
   // App Modes: 'protect' or 'verify'
   const [activeTab, setActiveTab] = useState('protect');
@@ -19,7 +22,8 @@ function App() {
 
   const fetchNewSession = () => {
     setSession(null);
-    axios.get("http://localhost:8000/api/handshake")
+    // 2. Updated to use dynamic URL variable
+    axios.get(`${API_BASE_URL}/api/handshake`)
       .then(res => {
         setSession(res.data);
         if (activeTab === 'protect') {
@@ -62,8 +66,8 @@ function App() {
 
       setStatus("🚀 Transmitting securely to server...");
 
-      // 2. Transmit and receive binary stream
-      const res = await axios.post("http://localhost:8000/api/v1/sanitize", formData, {
+      // 2. Updated to use dynamic URL variable
+      const res = await axios.post(`${API_BASE_URL}/api/v1/sanitize`, formData, {
         responseType: 'arraybuffer' 
       });
 
@@ -128,7 +132,8 @@ function App() {
     formData.append("file", file);
 
     try {
-      const res = await axios.post("http://localhost:8000/api/v1/verify", formData);
+      // 3. Updated to use dynamic URL variable
+      const res = await axios.post(`${API_BASE_URL}/api/v1/verify`, formData);
       setVerifyResult(res.data);
       setStatus("✅ Verification complete.");
       resetUI(); // Auto-reset UI after verification

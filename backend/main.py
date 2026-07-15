@@ -1,15 +1,15 @@
 import os
+import secrets
 import base64
-import time
-import io
 import json
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, JSONResponse
+from io import BytesIO
+from PIL import Image
 import oqs
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Response
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from PIL import Image, ExifTags
-from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
 
 # --- CORS CONFIGURATION ---
@@ -26,172 +26,139 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# In-Memory State Store for Session-Scoped Keys
+# --- IN-MEMORY SESSION STORE ---
 active_sessions = {}
 
-class MasterSigner:
-    def __init__(self):
-        self.sig_name = "ML-DSA-44" 
-        with oqs.Signature(self.sig_name) as signer:
-            self.public_key = signer.generate_keypair()
-            self.secret_key = signer.export_secret_key()
-
-    def sign(self, message: bytes) -> bytes:
-        with oqs.Signature(self.sig_name, secret_key=self.secret_key) as signer:
-            return signer.sign(message)
-
-signer = MasterSigner()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    print("🚀 PQC Privacy Server Online (Session-Scoped).")
-    yield
-    print("Shutting down...")
-
-app = FastAPI(lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-def cleanup_expired_sessions():
-    current_time = time.time()
-    expired = [sid for sid, data in active_sessions.items() if current_time > data["expires_at"]]
-    for sid in expired:
-        del active_sessions[sid]
-
+# --- 1. THE HANDSHAKE (Kyber ML-KEM) ---
 @app.get("/api/handshake")
-def generate_handshake():
-    cleanup_expired_sessions()
-    with oqs.KeyEncapsulation("ML-KEM-768") as kem:
-        public_key = kem.generate_keypair()
-        secret_key = kem.export_secret_key()
-        session_id = os.urandom(16).hex()
-        
-        # Keep session alive for 1 hour
-        active_sessions[session_id] = {
-            "secret_key": secret_key,
-            "expires_at": time.time() + 3600.0
-        }
-        
-        return {
-            "session_id": session_id,
-            "public_key": base64.b64encode(public_key).decode('utf-8')
-        }
+def handshake():
+    kem = oqs.KeyEncapsulation('Kyber768')
+    public_key = kem.generate_keypair()
+    session_id = secrets.token_hex(16)
+    active_sessions[session_id] = kem
+    
+    return {
+        "session_id": session_id,
+        "public_key": base64.b64encode(public_key).decode('utf-8')
+    }
 
+# --- 2. SANITIZE & SIGN ---
 @app.post("/api/v1/sanitize")
-async def sanitize_image(
+async def sanitize(
+    request: Request, # Added to trace incoming Origin headers dynamically on error blocks
+    file: UploadFile = File(...),
     session_id: str = Form(...),
-    ciphertext: UploadFile = File(...),
-    iv: UploadFile = File(...),
-    file: UploadFile = File(...)
+    encapsulated_key: str = Form(...),
+    iv: str = Form(...)
 ):
-    session = active_sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=403, detail="Session expired or invalid")
-    
-    kyber_secret_key = session["secret_key"]
-    # NOT deleting the session here so the frontend can reuse it!
-    
-    ciphertext_bytes = await ciphertext.read()
-    iv_bytes = await iv.read()
-    encrypted_file_bytes = await file.read()
+    if session_id not in active_sessions:
+        origin = request.headers.get("origin", "*")
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid or expired session. Please refresh."},
+            headers={"Access-Control-Allow-Origin": origin}
+        )
+        
+    kem = active_sessions.pop(session_id) 
     
     try:
-        # 1. DECAPSULATE & DECRYPT
-        with oqs.KeyEncapsulation("ML-KEM-768", secret_key=kyber_secret_key) as kem:
-            shared_secret = kem.decap_secret(ciphertext_bytes)
-            
-        aesgcm = AESGCM(shared_secret[:32]) 
-        decrypted_image_bytes = aesgcm.decrypt(iv_bytes, encrypted_file_bytes, None)
+        # A. Decapsulate AES Key
+        ciphertext_bytes = base64.b64decode(encapsulated_key)
+        aes_key = kem.decap_secret(ciphertext_bytes)
         
-        # 2. EXTRACT METADATA (Aggressively read the ORIGINAL file before doing anything)
-        image = Image.open(io.BytesIO(decrypted_image_bytes))
-        metadata_dict = {}
+        # B. Decrypt Image
+        iv_bytes = base64.b64decode(iv)
+        encrypted_image = await file.read()
+        aesgcm = AESGCM(aes_key)
+        raw_image_bytes = aesgcm.decrypt(iv_bytes, encrypted_image, None)
         
-        try:
-            if hasattr(image, '_getexif') and image._getexif():
-                for tag_id, value in image._getexif().items():
-                    tag = ExifTags.TAGS.get(tag_id, tag_id)
-                    if isinstance(value, bytes):
-                        value = value.decode('utf-8', 'ignore')
-                    metadata_dict[str(tag)] = str(value)
-        except Exception as e:
-            print(f"Metadata extraction error: {e}")
-
-        if not metadata_dict:
-            metadata_dict = {"Status": "No EXIF metadata found in the original uploaded image."}
-            
-        # 3. SANITIZE (Convert to PNG to physically destroy metadata structures)
-        if image.mode not in ('RGB', 'RGBA'):
-            image = image.convert('RGBA')
-            
-        clean_byte_arr = io.BytesIO()
-        image.save(clean_byte_arr, format='PNG')
-        clean_bytes = clean_byte_arr.getvalue()
+        # C. Process Metadata
+        image_stream = BytesIO(raw_image_bytes)
+        img = Image.open(image_stream)
+        raw_metadata = img.info.copy()
         
-        # 4. SIGN & EMBED PUBLIC KEY
-        signature_bytes = signer.sign(clean_bytes)
-        final_payload = clean_bytes + signer.public_key + signature_bytes
+        # Defensive processing: Summarize huge binary blobs so they don't crash the JSON parser
+        metadata = {}
+        if raw_metadata:
+            for k, v in raw_metadata.items():
+                str_k = str(k)
+                if isinstance(v, bytes):
+                    if len(v) > 100:
+                        metadata[str_k] = f"<Raw Binary Data: {len(v)} bytes - Stripped Successfully>"
+                    else:
+                        metadata[str_k] = str(v)
+                else:
+                    str_v = str(v)
+                    if len(str_v) > 200:
+                        metadata[str_k] = str_v[:200] + "... [Truncated]"
+                    else:
+                        metadata[str_k] = str_v
+        else:
+            metadata = {"Status": "No metadata found."}
         
-        # 5. SECURE JSON WRAPPER
-        b64_image = base64.b64encode(final_payload).decode('utf-8')
+        # =====================================================================
+        # CRITICAL FIX: Explicitly clear the internal info dict before saving.
+        # This completely blocks Pillow from feeding corrupted or incompatible
+        # JPEG metadata markers into the PNG engine, eliminating the crash!
+        # =====================================================================
+        img.info = {}
+        
+        clean_stream = BytesIO()
+        img.save(clean_stream, format="PNG")
+        clean_image_bytes = clean_stream.getvalue()
+        
+        # D. Sign Image (Dilithium)
+        signer = oqs.Signature('Dilithium2')
+        signer_pub_key = signer.generate_keypair()
+        signature = signer.sign(clean_image_bytes)
+        
+        # E. Package & Re-encrypt
+        final_payload = clean_image_bytes + signer_pub_key + signature
         response_data = {
-            "metadata": metadata_dict,
-            "image_b64": b64_image
+            "metadata": metadata,
+            "image_b64": base64.b64encode(final_payload).decode('utf-8')
         }
         json_bytes = json.dumps(response_data).encode('utf-8')
         
-        # 6. ENCRYPT THE RETURN TRIP
         return_iv = os.urandom(12)
-        encrypted_json = aesgcm.encrypt(return_iv, json_bytes, None)
-        secure_response = return_iv + encrypted_json
+        return_ciphertext = aesgcm.encrypt(return_iv, json_bytes, None)
         
-        return Response(
-            content=secure_response, 
-            media_type="application/octet-stream"
-        )
+        return Response(content=return_iv + return_ciphertext, media_type="application/octet-stream")
         
     except Exception as e:
-        print(f"🔥 Cryptographic Crash: {e}")
-        raise HTTPException(status_code=500, detail="Backend failed to process payload")
-    
+        print(f"Error during sanitization: {e}")
+        # CORS Bulletproofing: Capture the error and force mirror the header response origin
+        # so the frontend reads the actual message text instead of generating a CORS failure block.
+        origin = request.headers.get("origin", "*")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Cryptographic processing or format conversion failed: {str(e)}"},
+            headers={"Access-Control-Allow-Origin": origin}
+        )
+
+# --- 3. VERIFICATION ---
 @app.post("/api/v1/verify")
-async def verify_image_self_contained(file: UploadFile = File(...)):
+async def verify(file: UploadFile = File(...)):
     file_bytes = await file.read()
     
-    # Fixed lengths for ML-DSA-44
-    SIG_LENGTH = 2420
-    PUB_KEY_LENGTH = 1312
-    TOTAL_APPENDED = SIG_LENGTH + PUB_KEY_LENGTH
-
-    if len(file_bytes) <= TOTAL_APPENDED:
-        return {"verified": False, "message": "File is too small to contain a key and signature."}
-
-    # Slice the file from the bottom up
-    signature_bytes = file_bytes[-SIG_LENGTH:]
-    public_key_bytes = file_bytes[-TOTAL_APPENDED:-SIG_LENGTH]
-    image_bytes = file_bytes[:-TOTAL_APPENDED]
-
+    pk_size = 1312
+    sig_size = 2420
+    
+    if len(file_bytes) < (sig_size + pk_size):
+        return {"verified": False, "message": "File is too small. Missing signature block."}
+        
+    signature = file_bytes[-sig_size:]
+    public_key = file_bytes[-(sig_size + pk_size):-sig_size]
+    image_data = file_bytes[:-(sig_size + pk_size)]
+    
     try:
-        # Verify using the public key EXTRACTED FROM THE FILE
-        with oqs.Signature("ML-DSA-44") as verifier:
-            is_valid = verifier.verify(image_bytes, signature_bytes, public_key_bytes)
-            
+        verifier = oqs.Signature('Dilithium2')
+        is_valid = verifier.verify(image_data, signature, public_key)
+        
         if is_valid:
-            return {
-                "verified": True, 
-                "message": "✅ Authentic: Math checks out! (Verified using embedded public key)."
-            }
+            return {"verified": True, "message": "Valid signature. Image is pristine."}
         else:
-            return {
-                "verified": False, 
-                "message": "❌ Tampered: The image or signature was altered."
-            }
+            return {"verified": False, "message": "WARNING: File tampered or corrupted."}
             
     except Exception as e:
-        return {"verified": False, "message": f"❌ Verification Error: {str(e)}"}
+        return {"verified": False, "message": "Failed to parse signature."}

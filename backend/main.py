@@ -2,7 +2,7 @@ import os
 import secrets
 import base64
 import json
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse
 from io import BytesIO
@@ -45,19 +45,13 @@ def handshake():
 # --- 2. SANITIZE & SIGN ---
 @app.post("/api/v1/sanitize")
 async def sanitize(
-    request: Request, # Added to trace incoming Origin headers dynamically on error blocks
     file: UploadFile = File(...),
     session_id: str = Form(...),
     encapsulated_key: str = Form(...),
     iv: str = Form(...)
 ):
     if session_id not in active_sessions:
-        origin = request.headers.get("origin", "*")
-        return JSONResponse(
-            status_code=400,
-            content={"detail": "Invalid or expired session. Please refresh."},
-            headers={"Access-Control-Allow-Origin": origin}
-        )
+        return JSONResponse(status_code=400, content={"detail": "Invalid or expired session. Please refresh."})
         
     kem = active_sessions.pop(session_id) 
     
@@ -77,30 +71,23 @@ async def sanitize(
         img = Image.open(image_stream)
         raw_metadata = img.info.copy()
         
-        # Defensive processing: Summarize huge binary blobs so they don't crash the JSON parser
+        # Format metadata for the frontend
         metadata = {}
         if raw_metadata:
             for k, v in raw_metadata.items():
                 str_k = str(k)
                 if isinstance(v, bytes):
-                    if len(v) > 100:
-                        metadata[str_k] = f"<Raw Binary Data: {len(v)} bytes - Stripped Successfully>"
-                    else:
-                        metadata[str_k] = str(v)
+                    metadata[str_k] = f"<Raw Binary Data: {len(v)} bytes - Stripped>" if len(v) > 100 else str(v)
                 else:
                     str_v = str(v)
-                    if len(str_v) > 200:
-                        metadata[str_k] = str_v[:200] + "... [Truncated]"
-                    else:
-                        metadata[str_k] = str_v
+                    metadata[str_k] = str_v[:200] + "... [Truncated]" if len(str_v) > 200 else str_v
         else:
-            metadata = {"Status": "No metadata found."}
+            metadata = {"Status": "No tracking metadata found."}
         
-        # =====================================================================
-        # CRITICAL FIX: Explicitly clear the internal info dict before saving.
-        # This completely blocks Pillow from feeding corrupted or incompatible
-        # JPEG metadata markers into the PNG engine, eliminating the crash!
-        # =====================================================================
+        # ==========================================================
+        # CRITICAL FIX: Force clear the metadata structures.
+        # This prevents the 500 Internal Server Crash when saving.
+        # ==========================================================
         img.info = {}
         
         clean_stream = BytesIO()
@@ -127,14 +114,9 @@ async def sanitize(
         
     except Exception as e:
         print(f"Error during sanitization: {e}")
-        # CORS Bulletproofing: Capture the error and force mirror the header response origin
-        # so the frontend reads the actual message text instead of generating a CORS failure block.
-        origin = request.headers.get("origin", "*")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Cryptographic processing or format conversion failed: {str(e)}"},
-            headers={"Access-Control-Allow-Origin": origin}
-        )
+        # Returning a standard JSONResponse here allows the CORS middleware 
+        # to properly attach origin headers, preventing the fake CORS block!
+        return JSONResponse(status_code=500, content={"detail": f"Processing failed: {str(e)}"})
 
 # --- 3. VERIFICATION ---
 @app.post("/api/v1/verify")

@@ -10,6 +10,10 @@ class MasterSigner:
         self.sig_name = "ML-DSA-44" 
         self.key_file = "master_keys.bin"
         
+        # Save the master keys in the persistent volume
+        DATA_DIR = os.environ.get("DATA_DIR", ".")
+        self.key_file = os.path.join(DATA_DIR, "master_keys.bin")
+        
         # Check if the persistent key file exists in the root directory
         if os.path.exists(self.key_file):
             with open(self.key_file, "rb") as f:
@@ -31,6 +35,9 @@ class MasterSigner:
         """Signs an arbitrary byte message using the secret key."""
         with oqs.Signature(self.sig_name, secret_key=self.secret_key) as signer:
             return signer.sign(message)
+            
+        
+    
 
 # Instantiate the signer so it can be imported directly by your routers
 signer = MasterSigner()

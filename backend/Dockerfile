@@ -1,35 +1,30 @@
-FROM python:3.11-slim
+# 1. Use the official Python image
+FROM python:3.10-slim
 
-# 1. Install necessary dependencies, adding libssl-dev
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    ninja-build \
-    libssl-dev \
-    && rm -rf /var/list/apt/lists/*
+# 2. Install C-compilers and tools needed for the post-quantum math
+RUN apt-get update && apt-get install -y cmake gcc ninja-build git libssl-dev
 
-# 2. Clone liboqs
-RUN git clone --branch main https://github.com/open-quantum-safe/liboqs.git /opt/liboqs
+# 3. Clone and build the liboqs C-library
+RUN git clone -b main https://github.com/open-quantum-safe/liboqs.git \
+    && cd liboqs && mkdir build && cd build \
+    && cmake -GNinja .. -DBUILD_SHARED_LIBS=ON \
+    && ninja && ninja install
 
-# 3. Configure and compile liboqs safely
-# We limit Ninja to 1 job (-j 1) to prevent the Render Free Tier from running out of RAM
-WORKDIR /opt/liboqs/build
-RUN cmake -GNinja -DBUILD_SHARED_LIBS=ON .. \
-    && ninja -j 1 \
-    && ninja install
+# 4. Tell Python where to find the newly built C-library (Fixes your warning)
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
-# 4. Set environment variable so Python can find the compiled C library
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-
-# 5. Set up application directory
+# 5. Set up the FastAPI application
 WORKDIR /app
-COPY requirements.txt .
+
+# 6. Copy ONLY requirements first (This prevents the error you just got)
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. Copy backend code
+# 7. Copy the rest of your code into the container
 COPY . .
 
-# 7. Expose port and run the FastAPI application
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 8. Expose the data directory variable for SQLite/Keys
+ENV DATA_DIR=/data
+
+# 9. Start the server
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

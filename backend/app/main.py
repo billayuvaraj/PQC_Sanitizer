@@ -29,7 +29,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://pqc-frontend.vercel.app", 
+        "https://pqc-sanitizer-rho.vercel.app", 
         "http://localhost:5173" # Keep this so you can still test locally
     ], 
     allow_credentials=True,

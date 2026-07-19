@@ -28,7 +28,11 @@ app = FastAPI(
 # Note: Update allow_origins with your exact frontend domains before production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=[
+        "https://pqc-frontend.vercel.app", 
+        "http://localhost:5173" # Keep this so you can still test locally
+    ], 
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,3 +47,4 @@ app.include_router(users.router)
 @app.get("/", tags=["Health"])
 def health_check():
     return {"status": "online", "message": "PQC Privacy Guard API is running."}
+

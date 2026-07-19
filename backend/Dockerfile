@@ -18,7 +18,7 @@ WORKDIR /app
 
 # 6. Copy ONLY requirements first (This prevents the error you just got)
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt 
 
 # 7. Copy the rest of your code into the container
 COPY . .
@@ -27,4 +27,4 @@ COPY . .
 ENV DATA_DIR=/data
 
 # 9. Start the server
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

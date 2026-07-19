@@ -10,21 +10,30 @@ RUN git clone -b main https://github.com/open-quantum-safe/liboqs.git \
     && cmake -GNinja .. -DBUILD_SHARED_LIBS=ON \
     && ninja && ninja install
 
-# 4. Tell Python where to find the newly built C-library (Fixes your warning)
+# 4. Tell Python where to find the newly built C-library
 ENV LD_LIBRARY_PATH=/usr/local/lib
-
-# 5. Set up the FastAPI application
 WORKDIR /app
 
-# 6. Copy ONLY requirements first (This prevents the error you just got)
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt 
+# 5. BULLETPROOF FIX: We write the requirements directly inside Docker!
+# This completely bypasses the "COPY requirements.txt not found" error.
+RUN echo "fastapi\n\
+uvicorn\n\
+sqlalchemy\n\
+passlib[bcrypt]\n\
+pyjwt\n\
+python-multipart\n\
+liboqs-python\n\
+cryptography\n\
+pillow" > requirements.txt
 
-# 7. Copy the rest of your code into the container
+# 6. Install the packages we just generated
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 7. Copy your Python files into the container
 COPY . .
 
 # 8. Expose the data directory variable for SQLite/Keys
 ENV DATA_DIR=/data
 
-# 9. Start the server
+# 9. Start the server (Using the correct JSON format to fix your other warning)
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

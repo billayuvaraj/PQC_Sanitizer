@@ -15,7 +15,6 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 WORKDIR /app
 
 # 5. BULLETPROOF FIX: We write the requirements directly inside Docker!
-# This completely bypasses the "COPY requirements.txt not found" error.
 RUN echo "fastapi\n\
 uvicorn\n\
 sqlalchemy\n\
@@ -35,5 +34,5 @@ COPY . .
 # 8. Expose the data directory variable for SQLite/Keys
 ENV DATA_DIR=/data
 
-# 9. Start the server (Using the correct JSON format to fix your other warning)
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# 9. STARTUP FIX: Navigate into the backend folder if Railway copied the whole repo
+CMD ["sh", "-c", "if [ -d 'backend' ]; then cd backend; fi; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

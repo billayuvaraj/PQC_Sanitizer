@@ -26,15 +26,19 @@ app = FastAPI(
 
 # Configure CORS (Cross-Origin Resource Sharing)
 # Note: Update allow_origins with your exact frontend domains before production
+# 1. Define the allowed URLs
+origins = [
+    "http://localhost:5173",                    # Local React development
+    "https://pqc-sanitizer.vercel.app",         # Your deployed Vercel frontend
+]
+
+# 2. Add the CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://pqc-sanitizer.vercel.app", 
-        "http://localhost:5173" # Keep this so you can still test locally
-    ], 
+    allow_origins=origins,                      # Only allow these domains
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],                        # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],                        # Allow all headers
 )
 
 # Register all modular routers

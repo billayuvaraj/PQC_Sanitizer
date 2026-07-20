@@ -4,7 +4,7 @@ import axios from 'axios';
 const apiClient = axios.create({
   // Vite dynamically injects the correct URL based on your .env files.
   // It falls back to localhost to prevent crashes if the variable is missing.
-  baseURL: import.meta.env.VITE_API_URL || 'https://pqcsanitizer-production.up.railway.app',
+  baseURL: import.meta.env.VITE_API_URL || 'https://threefold-motocross-facing.ngrok-free.dev',
   
   // Set default headers that apply to all requests
   headers: {

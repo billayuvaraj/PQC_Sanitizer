@@ -9,6 +9,7 @@ const apiClient = axios.create({
   // Set default headers that apply to all requests
   headers: {
     'Accept': 'application/json, application/octet-stream',
+    'ngrok-skip-browser-warning': 'true'
   },
 });
 

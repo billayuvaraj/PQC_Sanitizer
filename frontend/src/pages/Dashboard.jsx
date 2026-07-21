@@ -285,35 +285,6 @@ export default function Dashboard({ user, onLogout }) {
           <p style={{ margin: 0, fontSize: '14px', color: '#333' }}>{verifyResult.message}</p>
         </div>
       )}
-      {/* NEW PRIVACY ANALYZER DISPLAY PANEL */}
-      {activeTab === 'protect' && privacyAnalysis && (
-        <div style={{ marginBottom: '24px', padding: '24px', border: `1px solid ${privacyAnalysis.color}`, borderRadius: '12px', backgroundColor: '#ffffff', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1a1a1a' }}>
-              🛡️ Privacy Risk Assessment
-            </h4>
-            <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: '700', backgroundColor: privacyAnalysis.color + '15', color: privacyAnalysis.color, border: `1px solid ${privacyAnalysis.color}` }}>
-              {privacyAnalysis.level}
-            </span>
-          </div>
-
-          {/* Progress Risk Bar */}
-          <div style={{ width: '100%', height: '8px', backgroundColor: '#f1f3f4', borderRadius: '4px', overflow: 'hidden', marginBottom: '20px' }}>
-            <div style={{ width: `${privacyAnalysis.score}%`, height: '100%', backgroundColor: privacyAnalysis.color, transition: 'width 0.5s ease-out' }} />
-          </div>
-
-          {/* Threat List Mapping */}
-          <h5 style={{ margin: '0 0 8px 0', fontSize: '13px', fontWeight: '600', color: '#5f6368' }}>
-            Detected Privacy Threat Vectors:
-          </h5>
-          <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '14px', color: '#3c4043', lineHeight: '1.6' }}>
-            {privacyAnalysis.warnings.map((warning, index) => (
-              <li key={index} style={{ marginBottom: '6px' }}>{warning}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {activeTab === 'protect' && metadata && (
         <div style={{ marginTop: '30px', animation: 'fadeIn 0.3s ease' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
